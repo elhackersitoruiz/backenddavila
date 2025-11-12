@@ -1,18 +1,16 @@
+from django.utils.http import urlsafe_base64_decode
 from django.utils import timezone
 from datetime import timedelta
 from django.core.mail import send_mail
 from django.contrib.auth import authenticate, get_user_model
 from django.shortcuts import get_object_or_404
-
 from rest_framework import generics, status, filters, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.authentication import JWTAuthentication
-
 import random
-
 from .models import (
     Proveedor,
     Producto,
@@ -21,19 +19,36 @@ from .models import (
     PendingUser,
     Marca,
     Categoria,
+    Order,
+    Wishlist,
+    OrderItem
 )
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.utils.encoding import force_bytes
 from .serializers import (
     ProveedorSerializer,
     ProductoSerializer,
     UserRegisterSerializer,
     CartSerializer,
-    CartItemSerializer,
     CustomUserSerializer,
     MarcaSerializer,
     CategoriaSerializer,
+    OrderSerializer,
+    WishlistSerializer
 )
-
+from rest_framework.exceptions import PermissionDenied
+from django.core.exceptions import ValidationError
+from django.db.models import Q
+from rest_framework.parsers import MultiPartParser, FormParser
 User = get_user_model()
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.utils.encoding import force_str
+from django.contrib.auth import get_user_model
+from django.db.models import Sum, F
+token_generator = PasswordResetTokenGenerator()
+from urllib.parse import urlencode
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+
 class RegisterView(APIView):
     permission_classes = [AllowAny]
 
@@ -71,9 +86,6 @@ class RegisterView(APIView):
             }, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-User = get_user_model()
 
 class VerifyCodeView(APIView):
     permission_classes = [AllowAny]
@@ -115,22 +127,14 @@ class VerifyCodeView(APIView):
                 {"error": "El código ingresado no es correcto."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
         user = CustomUser.objects.create_user(
             email=pending.email,
             password=pending.password,
             nombre=pending.nombre,
             apellidos=pending.apellidos
         )
-
-
         pending.delete()
-
         return Response({"message": "Cuenta verificada y creada correctamente."}, status=status.HTTP_200_OK)
-
-
-
-
 def enviar_codigo_verificacion(email):
     """
     Envía un código de verificación ultra animado, con iconos flotando alrededor de la tarjeta,
@@ -193,7 +197,6 @@ def enviar_codigo_verificacion(email):
 
 class ResendCodeView(APIView):
     permission_classes = [AllowAny]
-
     def post(self, request):
         email = request.data.get("email")
 
@@ -204,7 +207,6 @@ class ResendCodeView(APIView):
 
         now = timezone.now()
 
-        # Verificar límite de 3 reenvíos por hora
         if peding.last_resend_time and now - peding.last_resend_time < timedelta(hours=1):
             if peding.resend_count >= 3:
                 return Response(
@@ -212,17 +214,14 @@ class ResendCodeView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         else:
-            peding.resend_count = 0  # Reiniciar conteo después de 1 hora
+            peding.resend_count = 0 
 
-        # Verificar espera mínima de 2 minutos
         if peding.last_resend_time and now - peding.last_resend_time < timedelta(minutes=1):
             tiempo_restante = 60 - (now - peding.last_resend_time).seconds
             return Response(
                 {"error": f"Debes esperar {tiempo_restante} segundos antes de reenviar el código."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        # Generar y guardar nuevo código
         new_code = enviar_codigo_verificacion(email)
         peding.verification_code = new_code
         peding.code_expires_at = now + timedelta(minutes=10)
@@ -230,7 +229,6 @@ class ResendCodeView(APIView):
         peding.resend_count += 1
         peding.save()
 
-        # Enviar correo
         send_mail(
             "Nuevo código de verificación",
             f"Tu nuevo código es: {new_code}",
@@ -238,67 +236,34 @@ class ResendCodeView(APIView):
             [peding.email],
             fail_silently=False,
         )
-
         return Response(
             {"message": "Nuevo código enviado correctamente."},
             status=status.HTTP_200_OK,
         )
-
-# -----------------------------
-# GET -> Listar todos los proveedores
-# -----------------------------
 class ProveedorListAPIView(generics.ListAPIView):
     queryset = Proveedor.objects.all()
     serializer_class = ProveedorSerializer
-    permission_classes = [IsAdminUser]  # Solo staff puede listar
+    permission_classes = [IsAdminUser]
 
-# -----------------------------
-# POST -> Crear un proveedor
-# -----------------------------
 class ProveedorCreateAPIView(generics.CreateAPIView):
     queryset = Proveedor.objects.all()
     serializer_class = ProveedorSerializer
-    permission_classes = [IsAdminUser]  # Solo staff puede crear
+    permission_classes = [IsAdminUser] 
 
-# -----------------------------
-# GET -> Obtener un proveedor por ID
-# -----------------------------
 class ProveedorRetrieveAPIView(generics.RetrieveAPIView):
     queryset = Proveedor.objects.all()
     serializer_class = ProveedorSerializer
-    permission_classes = [IsAdminUser]  # Solo staff puede ver
+    permission_classes = [IsAdminUser] 
 
-# -----------------------------
-# PUT/PATCH -> Actualizar un proveedor
-# -----------------------------
 class ProveedorUpdateAPIView(generics.UpdateAPIView):
     queryset = Proveedor.objects.all()
     serializer_class = ProveedorSerializer
-    permission_classes = [IsAdminUser]  # Solo staff puede actualizar
+    permission_classes = [IsAdminUser]  
 
-# -----------------------------
-# DELETE -> Eliminar un proveedor
-# -----------------------------
 class ProveedorDeleteAPIView(generics.DestroyAPIView):
     queryset = Proveedor.objects.all()
     serializer_class = ProveedorSerializer
-    permission_classes = [IsAdminUser]  # Solo staff puede eliminar
-
-
-
-
-from rest_framework import generics, filters
-from rest_framework.permissions import AllowAny
-from .models import Producto
-from .serializers import ProductoSerializer
-
-from django.utils import timezone
-from datetime import timedelta
-from django.db.models import Q
-from rest_framework import generics, filters
-from rest_framework.permissions import AllowAny
-from .models import Producto
-from .serializers import ProductoSerializer
+    permission_classes = [IsAdminUser] 
 
 class ProductoListView(generics.ListAPIView):
     serializer_class = ProductoSerializer
@@ -311,7 +276,6 @@ class ProductoListView(generics.ListAPIView):
         hace_7_dias = timezone.now() - timedelta(days=30)
         queryset = Producto.objects.all().order_by('-fecha_registro')
 
-        # Filtros opcionales
         categoria = self.request.query_params.get('categoria')
         marca = self.request.query_params.get('marca')
         procedencia = self.request.query_params.get('procedencia')
@@ -325,61 +289,40 @@ class ProductoListView(generics.ListAPIView):
 
         return queryset
 
-
-
 class ProductoCreateView(generics.CreateAPIView):
     queryset = Producto.objects.all()
     serializer_class = ProductoSerializer
-    permission_classes = [IsAdminUser]  # Solo staff puede ver
-
-
-from rest_framework import generics
-from rest_framework.permissions import AllowAny
-from .models import Producto
-from .serializers import ProductoSerializer
+    permission_classes = [IsAdminUser]  
 
 class ProductoDetailView(generics.RetrieveAPIView):
     queryset = Producto.objects.all()
     serializer_class = ProductoSerializer
-    permission_classes = [AllowAny]  # Permite acceso a cualquier usuario
-    lookup_field = 'slug'  # Busca por slug en la URL
-
-
-# 🔸 ACTUALIZAR producto
-from rest_framework.parsers import MultiPartParser, FormParser
+    permission_classes = [AllowAny]  
+    lookup_field = 'slug'  
 
 class ProductoUpdateView(generics.UpdateAPIView):
     queryset = Producto.objects.all()
     serializer_class = ProductoSerializer
-    parser_classes = [MultiPartParser, FormParser]  # 👈 IMPORTANTE
+    parser_classes = [MultiPartParser, FormParser] 
+    permission_classes = [IsAdminUser] 
 
-    permission_classes = [IsAdminUser]  # Solo staff puede ver
-
-
-# 🔸 ELIMINAR producto
 class ProductoDeleteView(generics.DestroyAPIView):
     queryset = Producto.objects.all()
     serializer_class = ProductoSerializer
-    permission_classes = [IsAdminUser]  # Solo staff puede ver
+    permission_classes = [IsAdminUser]  
 
-from django.db.models import Q
-
-# 🔸 PRODUCTOS NUEVOS
 class ProductoNuevoListView(generics.ListAPIView):
     serializer_class = ProductoSerializer
     permission_classes = [AllowAny]  
-
     def get_queryset(self):
         hace_30_dias = timezone.now().date() - timedelta(days=30)
         return Producto.objects.filter(
             Q(es_nuevo=True) | Q(fecha_novedad__gte=hace_30_dias)
         ).order_by('-fecha_novedad')
 
-
-# 🔸 PRODUCTOS DESTACADOS
 class ProductoDestacadoListView(generics.ListAPIView):
     serializer_class = ProductoSerializer
-    permission_classes = [AllowAny]  # 🔑 Aquí permitimos acceso sin 
+    permission_classes = [AllowAny]  
 
     def get_queryset(self):
         nombre = self.request.query_params.get('nombre', None)
@@ -390,30 +333,15 @@ class ProductoDestacadoListView(generics.ListAPIView):
                 Q(nombre_producto__icontains=nombre) |
                 Q(categoria__nombre__icontains=nombre)
             )
-
         return queryset.order_by('-fecha_registro')
 
-
-from rest_framework import generics, permissions, status
-from rest_framework.response import Response
-from .models import Cart, CartItem, Producto
-from .serializers import CartSerializer
-
-# -----------------------------
-# Listar carrito activo del usuario
-# -----------------------------
 class CartDetailView(generics.RetrieveAPIView):
     serializer_class = CartSerializer
     permission_classes = [permissions.IsAuthenticated]
-
     def get_object(self):
-        carrito, created = Cart.objects.get_or_create(user=self.request.user, activo=True)
+        carrito, created = Cart.objects.get_or_create(usuario=self.request.user, activo=True)
         return carrito
-
-
-# -----------------------------
-# Agregar producto al carrito
-# -----------------------------
+    
 class CartAddProductView(generics.GenericAPIView):
     serializer_class = CartSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -427,22 +355,43 @@ class CartAddProductView(generics.GenericAPIView):
         except Producto.DoesNotExist:
             return Response({"detail": "Producto no encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
-        carrito, created = Cart.objects.get_or_create(user=request.user, activo=True)
+        carrito, created = Cart.objects.get_or_create(usuario=request.user, activo=True)
+
         carrito.add_producto(producto, cantidad)
         serializer = self.get_serializer(carrito, context={"request": request})
         return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-from rest_framework import generics, permissions, status
+    
+from rest_framework import generics
 from rest_framework.response import Response
-from .models import Cart, Producto
-from .serializers import CartSerializer
+from rest_framework.permissions import AllowAny
+from .models import Producto
+from .serializers import ProductoSerializer
 
+class ProductosRelacionadosView(generics.GenericAPIView):
+    serializer_class = ProductoSerializer
+    permission_classes = [AllowAny]
+
+    def get(self, request, categoria, producto_id=None):
+        """
+        Devuelve productos relacionados por categoría,
+        excluyendo el producto actual (si se pasa producto_id)
+        y limitando a 8 resultados.
+        """
+        queryset = Producto.objects.filter(categoria=categoria)
+
+        # Excluir el producto actual si se pasa su ID
+        if producto_id:
+            queryset = queryset.exclude(id=producto_id)
+
+        # Limitamos los resultados
+        queryset = queryset.order_by('-fecha_registro')[:8]
+
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
 class CartUpdateProductView(generics.GenericAPIView):
-
     serializer_class = CartSerializer
     permission_classes = [permissions.IsAuthenticated]
-
     def put(self, request, producto_id, *args, **kwargs):
         return self.update_cart(request, producto_id)
 
@@ -450,7 +399,6 @@ class CartUpdateProductView(generics.GenericAPIView):
         return self.update_cart(request, producto_id)
 
     def update_cart(self, request, producto_id):
-        # ✅ Validar cantidad enviada
         try:
             cantidad = int(request.data.get("cantidad", 1))
             if cantidad < 0:
@@ -460,57 +408,36 @@ class CartUpdateProductView(generics.GenericAPIView):
             return Response({"detail": "Cantidad inválida."},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Buscar carrito activo del usuario
-        cart = Cart.objects.filter(user=request.user, activo=True).first()
+        cart = Cart.objects.filter(usuario=request.user, activo=True).first()
         if not cart:
             return Response({"detail": "Carrito no encontrado."},
                             status=status.HTTP_404_NOT_FOUND)
-
-        # ✅ Buscar producto
         try:
             producto = Producto.objects.get(id=producto_id)
         except Producto.DoesNotExist:
             return Response({"detail": "Producto no encontrado."},
                             status=status.HTTP_404_NOT_FOUND)
 
-        # ✅ Actualizar cantidad (usa método del modelo)
         cart.update_cantidad(producto, cantidad)
-
-        # ✅ Serializar y responder con el carrito actualizado
         serializer = self.get_serializer(cart, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-
-from rest_framework import generics, permissions, status
-from rest_framework.response import Response
-from .models import Cart, Producto
-
 class CartRemoveProductView(generics.DestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
-
     def delete(self, request, producto_id, *args, **kwargs):
-        # 🔹 Si el usuario no tiene carrito, lo creamos automáticamente
-        cart, _ = Cart.objects.get_or_create(user=request.user, activo=True)
+        cart, _ = Cart.objects.get_or_create(usuario=request.user, activo=True)
 
         try:
             producto = Producto.objects.get(id=producto_id)
         except Producto.DoesNotExist:
             return Response({"detail": "Producto no encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
-        # 🔹 Buscar el ítem en el carrito
         item = cart.items.filter(producto=producto).first()
         if not item:
-            # ✅ No error, solo informamos que ya no está
             return Response({"detail": "El producto ya no estaba en el carrito."}, status=status.HTTP_200_OK)
 
         item.delete()
         return Response({"detail": "Producto eliminado del carrito."}, status=status.HTTP_200_OK)
-
-    
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status, permissions
-from .models import Cart
 
 class CartClearView(APIView):
     """
@@ -520,140 +447,77 @@ class CartClearView(APIView):
 
     def delete(self, request, *args, **kwargs):
         try:
-            cart, created = Cart.objects.get_or_create(user=request.user, activo=True)
-            cart.items.all().delete()  # Borra todos los items del carrito
+            cart, created = Cart.objects.get_or_create(usuario=request.user, activo=True)
+            cart.items.all().delete()
             return Response({"message": "Carrito vaciado correctamente"}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-
-
-
-
-# -----------------------------
-# GET -> Listar todas las categorías
-# -----------------------------
+        
 class CategoriaListAPIView(generics.ListAPIView):
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
-    permission_classes = [AllowAny]  # 🔑 Aquí permitimos acceso sin 
+    permission_classes = [IsAdminUser]  
 
-
-# -----------------------------
-# POST -> Crear una categoría
-# -----------------------------
 class CategoriaCreateAPIView(generics.CreateAPIView):
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
-    permission_classes = [AllowAny]  # 🔑 Aquí permitimos acceso sin 
+    permission_classes = [IsAdminUser]  
 
-
-# -----------------------------
-# GET -> Obtener una categoría por ID
-# -----------------------------
 class CategoriaRetrieveAPIView(generics.RetrieveAPIView):
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
-    permission_classes = [AllowAny]  # 🔑 Aquí permitimos acceso sin 
+    permission_classes = [IsAdminUser]  
 
-
-# -----------------------------
-# PUT/PATCH -> Actualizar una categoría
-# -----------------------------
 class CategoriaUpdateAPIView(generics.UpdateAPIView):
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
-    permission_classes = [AllowAny]  # 🔑 Aquí permitimos acceso sin 
+    permission_classes = [IsAdminUser]  
 
-
-# -----------------------------
-# DELETE -> Eliminar una categoría
-# -----------------------------
 class CategoriaDeleteAPIView(generics.DestroyAPIView):
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
-    permission_classes = [AllowAny]  # 🔑 Aquí permitimos acceso sin 
+    permission_classes = [IsAdminUser]  
 
-
-# -----------------------------
-# GET -> Listar todas las marcas
-# -----------------------------
 class MarcaListAPIView(generics.ListAPIView):
     queryset = Marca.objects.all()
     serializer_class = MarcaSerializer
-    permission_classes = [AllowAny]  # 🔑 Aquí permitimos acceso sin 
+    permission_classes = [IsAdminUser]  
 
-
-# -----------------------------
-# POST -> Crear una marca
-# -----------------------------
 class MarcaCreateAPIView(generics.CreateAPIView):
     queryset = Marca.objects.all()
     serializer_class = MarcaSerializer
-    permission_classes = [AllowAny]  # 🔑 Aquí permitimos acceso sin 
+    permission_classes = [IsAdminUser]  
 
-# -----------------------------
-# GET -> Obtener una marca por ID
-# -----------------------------
 class MarcaRetrieveAPIView(generics.RetrieveAPIView):
     queryset = Marca.objects.all()
     serializer_class = MarcaSerializer
-    permission_classes = [AllowAny]  # 🔑 Aquí permitimos acceso sin 
+    permission_classes = [IsAdminUser]  
 
-
-# -----------------------------
-# PUT/PATCH -> Actualizar una marca
-# -----------------------------
 class MarcaUpdateAPIView(generics.UpdateAPIView):
     queryset = Marca.objects.all()
     serializer_class = MarcaSerializer
-    permission_classes = [AllowAny]  # 🔑 Aquí permitimos acceso sin 
+    permission_classes = [IsAdminUser]  
 
-
-# -----------------------------
-# DELETE -> Eliminar una marca
-# -----------------------------
 class MarcaDeleteAPIView(generics.DestroyAPIView):
     queryset = Marca.objects.all()
     serializer_class = MarcaSerializer
-    permission_classes = [AllowAny]  # 🔑 Aquí permitimos acceso sin 
-
-
-
-
-
-User = get_user_model()
-
+    permission_classes = [IsAdminUser]  
 
 class UserListView(generics.ListAPIView):
-    """
-    Lista todos los usuarios — solo visible para admin.
-    """
     queryset = User.objects.all()
     serializer_class = CustomUserSerializer
-    permission_classes = [IsAdminUser]  # 🔑 Aquí permitimos acceso sin 
+    permission_classes = [IsAdminUser]  
     def get_queryset(self):
-        # 🔹 Filtramos solo usuarios que no son staff
         return User.objects.filter(is_staff=False)
 
 class UserProfileView(APIView):
-    """
-    Devuelve los datos del usuario autenticado.
-    """
     permission_classes = [IsAuthenticated]
-
     def get(self, request):
         serializer = CustomUserSerializer(request.user)
         return Response(serializer.data)
-
-
+    
 class UpdatePricePermissionView(APIView):
-    """
-    Permite al administrador otorgar o revocar el permiso de ver precios por mayoreo.
-    """
-    permission_classes = [IsAdminUser]  # Solo staff puede ver
-
+    permission_classes = [IsAdminUser]  
     def patch(self, request, pk):
         try:
             user = User.objects.get(pk=pk)
@@ -668,13 +532,7 @@ class UpdatePricePermissionView(APIView):
         user.puede_ver_precios = bool(puede_ver)
         user.save()
         return Response({"message": f"Permiso actualizado correctamente para {user.email}."})
-
-
-from rest_framework import generics, permissions, status
-from rest_framework.response import Response
-from .models import CustomUser
-from django.shortcuts import get_object_or_404
-
+    
 class AsignarPrecioMayoreoView(generics.UpdateAPIView):
     queryset = CustomUser.objects.all()
     permission_classes = [permissions.IsAdminUser]
@@ -692,18 +550,6 @@ class AsignarPrecioMayoreoView(generics.UpdateAPIView):
                 "mensaje": f"Permiso actualizado para {user.email}"
             })
 
-
-from datetime import timedelta
-from django.utils import timezone
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import AllowAny
-from django.contrib.auth import authenticate, get_user_model
-from rest_framework_simplejwt.tokens import RefreshToken
-
-User = get_user_model()
-
 class LoginView(APIView):
     permission_classes = [AllowAny]
 
@@ -716,7 +562,12 @@ class LoginView(APIView):
 
         user = User.objects.filter(email=email).first()
 
-        # Verificar bloqueo
+        if user and not user.is_active:
+            return Response(
+                {"detail": "Usuario bloqueado. Comuníquese con soporte."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
         if user and user.blocked_until and user.blocked_until > timezone.now():
             return Response(
                 {"detail": f"Usuario bloqueado hasta {user.blocked_until.strftime('%H:%M:%S')}"},
@@ -734,7 +585,6 @@ class LoginView(APIView):
                 user.save()
             return Response({"detail": "Credenciales inválidas."}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Login exitoso → resetear contador
         user.failed_login_attempts = 0
         user.blocked_until = None
         user.save()
@@ -773,65 +623,47 @@ class UserInfoView(APIView):
             "apellidos": user.apellidos,
             "is_staff": user.is_staff
         })
-
-
-
-# tienda/api/wishlist_views.py
-from rest_framework import generics, permissions
-from .models import Wishlist
-from .serializers import WishlistSerializer
-
+    
 class WishlistListView(generics.ListAPIView):
     """
-    Listar todos los items de la wishlist del usuario logueado
+    Retorna todos los productos en la wishlist del usuario autenticado.
     """
     serializer_class = WishlistSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        # 🔹 Retorna solo los items de la wishlist del usuario logueado
-        return Wishlist.objects.filter(usuario=self.request.user)
+        return Wishlist.objects.filter(usuario=self.request.user).select_related("producto")
 
 
-from rest_framework import generics, permissions
-from .models import Wishlist, Producto
-from .serializers import WishlistSerializer
-
-# 🔹 Crear/Agregar a wishlist
 class WishlistCreateView(generics.CreateAPIView):
+    """
+    Agrega un producto a la wishlist del usuario autenticado.
+    """
     queryset = Wishlist.objects.all()
     serializer_class = WishlistSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
-        # Usar 'usuario' como tu modelo lo define
         serializer.save(usuario=self.request.user)
 
-from rest_framework.response import Response
-from rest_framework import status, generics, permissions
-from .models import Wishlist
 
 class WishlistDeleteView(generics.DestroyAPIView):
+    """
+    Elimina un producto de la wishlist del usuario autenticado.
+    """
     permission_classes = [permissions.IsAuthenticated]
-
-    def delete(self, request, pk):
+    def delete(self, request, pk, *args, **kwargs):
         try:
             wishlist_item = Wishlist.objects.get(usuario=request.user, producto_id=pk)
             wishlist_item.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
+            return Response({"detail": "Producto eliminado de la wishlist."},
+                            status=status.HTTP_204_NO_CONTENT)
         except Wishlist.DoesNotExist:
             return Response(
-                {"detail": "Producto no encontrado en wishlist."},
-                status=status.HTTP_404_NOT_FOUND,
+                {"detail": "Producto no encontrado en la wishlist."},
+                status=status.HTTP_404_NOT_FOUND
             )
 
-from rest_framework import generics, permissions, status
-from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied, NotFound
-from .models import Order
-from .serializers import OrderSerializer
-from django.http import FileResponse
-from .utils import generate_order_pdf
 class OrderListView(generics.ListAPIView):
     """
     GET: Lista todas las órdenes del usuario autenticado.
@@ -841,51 +673,31 @@ class OrderListView(generics.ListAPIView):
 
     def get_queryset(self):
         return Order.objects.filter(user=self.request.user).order_by("-created_at")
-
-from rest_framework.response import Response
-from django.core.exceptions import ValidationError
-from .serializers import OrderSerializer
-
-
+    
 class OrderCreateView(generics.CreateAPIView):
-    """
-    POST: Crea una nueva orden a partir del carrito activo.
-    """
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated]
-
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         try:
-            order = serializer.save()  # El serializer ya usa request.user
+            order = serializer.save()  
         except ValidationError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Serializar nuevamente para devolver datos completos (incluye items, code, etc.)
         response_serializer = self.get_serializer(order)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
-
-
 class OrderDetailView(generics.RetrieveAPIView):
-    """
-    GET: Obtiene los detalles de una orden específica.
-    """
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated]
-
     def get_queryset(self):
         return Order.objects.filter(user=self.request.user)
 
 class OrderUpdateView(generics.UpdateAPIView):
-    """
-    PUT/PATCH: Actualiza los datos de una orden (solo si pertenece al usuario).
-    """
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated]
-
     def get_queryset(self):
         return Order.objects.filter(user=self.request.user)
 
@@ -896,12 +708,8 @@ class OrderUpdateView(generics.UpdateAPIView):
         serializer.save()
 
 class OrderDeleteView(generics.DestroyAPIView):
-    """
-    DELETE: Elimina una orden (solo si pertenece al usuario y está pendiente o cancelada).
-    """
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated]
-
     def get_queryset(self):
         return Order.objects.filter(user=self.request.user)
 
@@ -910,40 +718,17 @@ class OrderDeleteView(generics.DestroyAPIView):
             raise PermissionDenied("Solo se pueden eliminar órdenes pendientes o canceladas.")
         instance.delete()
 
-from rest_framework import generics, permissions
-from rest_framework.exceptions import PermissionDenied
-from .models import Order, OrderItem
-from .serializers import OrderSerializer
-
 class AdminOrderListView(generics.ListAPIView):
-    """
-    GET: Lista todas las órdenes (solo visible para admin/staff).
-    """
     queryset = Order.objects.all().order_by("-created_at")
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAdminUser]
 
-
 class AdminOrderDetailView(generics.RetrieveAPIView):
-    """
-    GET: Ver detalles de una orden específica (solo admin/staff).
-    """
     queryset = Order.objects.all()
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAdminUser]
 
-
-from rest_framework import generics, permissions, status
-from rest_framework.response import Response
-from .models import Order, OrderItem
-from .serializers import OrderSerializer
-
 class AdminOrderUpdateView(generics.UpdateAPIView):
-    """
-    Permite al administrador actualizar el estado de una orden.
-    Si el estado cambia a 'completed' o 'processing', descuenta el stock.
-    Si cambia a 'rejected' o 'cancelled', devuelve el stock.
-    """
     queryset = Order.objects.all()
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAdminUser]
@@ -953,16 +738,13 @@ class AdminOrderUpdateView(generics.UpdateAPIView):
         previous_status = order.status
         new_status = self.request.data.get("status", previous_status)
 
-        # Guardar la orden con el nuevo estado
         serializer.save(status=new_status)
         updated_order = serializer.instance
 
-        # Obtener los ítems asociados (relación inversa o queryset directo)
         order_items = getattr(updated_order, "items", None)
         if order_items is None or not hasattr(order_items, "all"):
             order_items = OrderItem.objects.filter(order=updated_order)
 
-        # ✅ Si se COMPLETA o PROCESA → DESCONTAR stock
         if new_status in ["completed", "processing"] and previous_status not in ["completed", "processing"]:
             for item in order_items.all():
                 product = item.producto
@@ -973,7 +755,6 @@ class AdminOrderUpdateView(generics.UpdateAPIView):
                 else:
                     print(f"⚠️ Stock insuficiente para {product.nombre_producto}")
 
-        # ✅ Si se RECHAZA o CANCELA → DEVOLVER stock (solo si estaba en processing/completed)
         elif new_status in ["rejected", "cancelled"] and previous_status in ["processing", "completed"]:
             for item in order_items.all():
                 product = item.producto
@@ -996,23 +777,12 @@ class AdminOrderUpdateView(generics.UpdateAPIView):
         }, status=status.HTTP_200_OK)
 
 class AdminOrderDeleteView(generics.DestroyAPIView):
-    """
-    DELETE: El admin puede eliminar cualquier orden.
-    """
+
     queryset = Order.objects.all()
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAdminUser]
 
-
-from rest_framework import generics, permissions
-from .models import Order
-from .serializers import OrderSerializer
-
 class MisPedidosView(generics.ListAPIView):
-    """
-    GET /api/orders/mis-pedidos/
-    Muestra los pedidos del usuario autenticado.
-    """
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -1022,25 +792,6 @@ class MisPedidosView(generics.ListAPIView):
             return Order.objects.none()
         return Order.objects.filter(user=user).order_by("-created_at")
 
-
-
-from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from django.contrib.auth import get_user_model
-from django.core.mail import send_mail
-from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-from rest_framework import status
-from rest_framework.response import Response
-from rest_framework.views import APIView
-from django.conf import settings
-
-User = get_user_model()
-token_generator = PasswordResetTokenGenerator()
-
-
-# ✅ 1️⃣ Solicitud de recuperación (envío del correo)
-
-# ✅ 2️⃣ Validación del token
 class PasswordResetValidateTokenView(APIView):
     def post(self, request):
         uidb64 = request.data.get("uid")
@@ -1057,23 +808,8 @@ class PasswordResetValidateTokenView(APIView):
         else:
             return Response({"error": "Token inválido o expirado."}, status=status.HTTP_400_BAD_REQUEST)
 
-
-from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from django.utils.http import urlsafe_base64_decode
-from django.utils.encoding import force_str
-from django.contrib.auth import get_user_model
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import AllowAny
-
-User = get_user_model()
-token_generator = PasswordResetTokenGenerator()
-
-# ✅ Confirmación del cambio de contraseña
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
-
     def post(self, request):
         uidb64 = request.data.get("uid")
         token = request.data.get("token")
@@ -1101,18 +837,7 @@ class PasswordResetConfirmView(APIView):
         user.save()
 
         return Response({"message": "✅ Contraseña restablecida correctamente."}, status=status.HTTP_200_OK)
-
-from django.contrib.auth import get_user_model
-from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from django.core.mail import send_mail
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import AllowAny
-from urllib.parse import urlencode
-
-User = get_user_model()
-
+    
 class RequestPasswordResetView(APIView):
     permission_classes = [AllowAny]
 
@@ -1122,14 +847,12 @@ class RequestPasswordResetView(APIView):
         if not user:
             return Response({"error": "Correo no encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Generar token seguro
         token_generator = PasswordResetTokenGenerator()
         token = token_generator.make_token(user)
 
         uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
         reset_link = f"http://localhost:3000/reset-password?uid={uidb64}&token={token}"
 
-        # Enviar correo
         send_mail(
             "Recupera tu contraseña",
             f"Hola {user.nombre} {user.apellidos or ''}, usa el siguiente enlace para restablecer tu contraseña: {reset_link}",
@@ -1139,30 +862,18 @@ class RequestPasswordResetView(APIView):
         )
 
         return Response({"message": "Correo de recuperación enviado."}, status=status.HTTP_200_OK)
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAdminUser
-from django.db.models import Sum, F
-from django.utils import timezone
-from tienda.models import Proveedor, Producto, OrderItem
-
+    
 class AdminProveedorStatsView(APIView):
     permission_classes = [IsAdminUser]
-
     def get(self, request):
-        # 🔹 Fecha actual y primer día del mes
         now = timezone.now()
         primer_dia_mes = timezone.datetime(now.year, now.month, 1, tzinfo=timezone.get_current_timezone())
 
-        # 🔹 Filtrar solo pedidos completados del mes
         items_mes = OrderItem.objects.filter(
             order__status='completed',
             order__created_at__gte=primer_dia_mes
         )
 
-        # -----------------------------
-        # Ranking por proveedor
-        # -----------------------------
         proveedores_data = (
             items_mes
             .values('producto__proveedor__nombre_empresa')
@@ -1170,7 +881,7 @@ class AdminProveedorStatsView(APIView):
                 ventas=Sum('cantidad'),
                 ganancias=Sum('subtotal')
             )
-            .order_by('-ventas')  # de mayor a menor
+            .order_by('-ventas') 
         )
 
         sales_data = [
@@ -1180,10 +891,6 @@ class AdminProveedorStatsView(APIView):
                 "ganancias": float(p['ganancias'])
             } for p in proveedores_data
         ]
-
-        # -----------------------------
-        # Ranking por categoría
-        # -----------------------------
         categorias_data = (
             items_mes
             .values('producto__categoria')
@@ -1193,7 +900,6 @@ class AdminProveedorStatsView(APIView):
             )
             .order_by('-ventas')
         )
-
         categorias_data = [
             {
                 "categoria": c['producto__categoria'],
@@ -1201,33 +907,21 @@ class AdminProveedorStatsView(APIView):
                 "ganancias": float(c['ganancias'])
             } for c in categorias_data
         ]
-
-        # -----------------------------
-        # Ranking por producto
-        # -----------------------------
         productos_data = (
             items_mes
             .values('producto__nombre_producto')
             .annotate(ventas=Sum('cantidad'))
             .order_by('-ventas')
         )
-
         productos_data = [
             {"producto": p['producto__nombre_producto'], "ventas": p['ventas']}
             for p in productos_data
         ]
 
-        # -----------------------------
-        # Totales del mes
-        # -----------------------------
         totales_mes = {
             "ventas": items_mes.aggregate(total_ventas=Sum('cantidad'))['total_ventas'] or 0,
             "ganancias": float(items_mes.aggregate(total_ganancias=Sum('subtotal'))['total_ganancias'] or 0.0)
         }
-
-        # -----------------------------
-        # Respuesta final
-        # -----------------------------
         data = {
             "salesData": sales_data,
             "categoriasData": categorias_data,
@@ -1236,15 +930,9 @@ class AdminProveedorStatsView(APIView):
         }
 
         return Response(data)
-# views.py
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status, permissions
-from .models import CustomUser
-
+    
 class AdminBlockUserView(APIView):
-    permission_classes = [permissions.IsAdminUser]  # Solo administradores
-
+    permission_classes = [permissions.IsAdminUser]  
     def post(self, request, user_id):
         """Permite al administrador bloquear o desbloquear manualmente a un usuario."""
         try:
@@ -1255,28 +943,19 @@ class AdminBlockUserView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Validar campo requerido
         if "is_active" not in request.data:
             return Response(
                 {"detail": "Debe incluir el campo 'is_active' (true o false)."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
-        # Aplicar bloqueo o desbloqueo manual
         is_active = request.data["is_active"]
-
         user.is_active = is_active
-
         if not is_active:
-            # 🔒 Bloqueo manual: impedir acceso indefinido
-            user.blocked_until = None  # no tiene fecha de expiración
+            user.blocked_until = None  
         else:
-            # 🔓 Desbloqueo: restaurar acceso normal
             user.failed_login_attempts = 0
             user.blocked_until = None
-
         user.save()
-
         action = "desbloqueado" if is_active else "bloqueado"
         return Response(
             {"message": f"El usuario {user.email} fue {action} correctamente."},

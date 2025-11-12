@@ -1,15 +1,19 @@
-from django.db import models
-from django.core.validators import RegexValidator, MinValueValidator, MaxValueValidator, EmailValidator
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
-from django.utils import timezone
-from django.utils.text import slugify
+
 from datetime import timedelta
 from decimal import Decimal
-
-# -----------------------------
-# MODELO DE CATEGORÍA
-# -----------------------------
+from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator, MinValueValidator, MaxValueValidator, EmailValidator
+from django.db import models
+from django.db.models import Sum, F
+from django.utils import timezone
+from django.utils.text import slugify
+from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
+from decimal import Decimal
+from django.db import models
+import random, string
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 class Categoria(models.Model):
     nombre = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(unique=True, blank=True)
@@ -25,11 +29,6 @@ class Categoria(models.Model):
 
     def __str__(self):
         return self.nombre
-
-
-# -----------------------------
-# MODELO DE MARCA
-# -----------------------------
 class Marca(models.Model):
     nombre = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(unique=True, blank=True)
@@ -47,9 +46,6 @@ class Marca(models.Model):
         return self.nombre
 
 
-# -----------------------------
-# MODELO DE PROVEEDOR
-# -----------------------------
 class Proveedor(models.Model):
     TIPO_PROVEEDOR_CHOICES = [
         ('nacional', 'Nacional'),
@@ -98,16 +94,6 @@ class Proveedor(models.Model):
 
     def get_categorias_list(self):
         return [c.strip() for c in self.categorias.split(',') if c.strip()]
-
-
-# -----------------------------
-# MODELO DE PRODUCTO
-from django.db import models
-from django.utils.text import slugify
-from django.utils import timezone
-from datetime import timedelta
-from django.core.validators import MinValueValidator, MaxValueValidator
-from .models import Proveedor  # Asegúrate de importar correctamente
 
 class Producto(models.Model):
     codigo = models.CharField(
@@ -166,7 +152,6 @@ class Producto(models.Model):
         ordering = ['-fecha_registro']
 
     def save(self, *args, **kwargs):
-        # Generar slug automáticamente si no existe
         if not self.slug:
             base_slug = slugify(f"{self.nombre_producto}-{self.codigo}")
             unique_slug = base_slug
@@ -175,8 +160,6 @@ class Producto(models.Model):
                 unique_slug = f"{base_slug}-{num}"
                 num += 1
             self.slug = unique_slug
-
-        # Registrar fecha de novedad si se marca como nuevo
         if self.es_nuevo and not self.fecha_novedad:
             self.fecha_novedad = timezone.now()
 
@@ -192,9 +175,13 @@ class Producto(models.Model):
     def __str__(self):
         return f"{self.nombre_producto} - {self.proveedor.nombre_empresa}"
 
-# -----------------------------
-# MODELOS DE USUARIO PERSONALIZADO
-# -----------------------------
+
+@receiver(post_delete, sender=Producto)
+def eliminar_imagen_producto(sender, instance, **kwargs):
+    """Elimina el archivo de imagen del sistema cuando se borra el producto."""
+    if instance.imagen:
+        instance.imagen.delete(save=False)
+
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         if not email:
@@ -222,16 +209,13 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     nombre = models.CharField(max_length=150, blank=True, null=True)
     apellidos = models.CharField(max_length=150, blank=True, null=True)
     direccion = models.CharField(max_length=255, blank=True, null=True)
-
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_verified = models.BooleanField(default=False)
-
     verification_code = models.CharField(max_length=6, blank=True, null=True)
     code_expires_at = models.DateTimeField(blank=True, null=True)
     resend_count = models.PositiveIntegerField(default=0)
     last_resend_time = models.DateTimeField(blank=True, null=True)
-
     puede_ver_precios = models.BooleanField(default=False, help_text="Permite ver el precio unitario de los productos.")
     puede_ver_precios_mayoreo = models.BooleanField(default=False, help_text="Permite ver el precio por mayoreo de los productos.")
     failed_login_attempts = models.IntegerField(default=0)
@@ -256,7 +240,6 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return self.email
 
-
 class PendingUser(models.Model):
     email = models.EmailField(unique=True)
     nombre = models.CharField(max_length=150)
@@ -271,39 +254,21 @@ class PendingUser(models.Model):
 
     def __str__(self):
         return self.email
-
-
-from django.db import models
-from django.conf import settings
-from django.db.models import Sum, F
-from decimal import Decimal
-
-User = settings.AUTH_USER_MODEL
-
 class Cart(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="carrito")
+    usuario = models.ForeignKey("tienda.CustomUser", on_delete=models.CASCADE)
     creado = models.DateTimeField(auto_now_add=True)
-    activo = models.BooleanField(default=True)  # Para indicar el carrito actual del usuario
+    activo = models.BooleanField(default=True) 
 
     def __str__(self):
-        return f"Carrito de {self.user.email}"
-
-    # -------------------------
-    # Agregar producto al carrito
-    # -------------------------
+        return f"Carrito de {self.usuario.email}"
     def add_producto(self, producto, cantidad=1):
         item, created = self.items.get_or_create(producto=producto)
         if not created:
             item.cantidad += cantidad
-            item.save()
         else:
             item.cantidad = cantidad
-            item.save()
+        item.save()
         return item
-
-    # -------------------------
-    # Actualizar cantidad
-    # -------------------------
     def update_cantidad(self, producto, cantidad):
         item = self.items.filter(producto=producto).first()
         if item:
@@ -312,44 +277,32 @@ class Cart(models.Model):
             else:
                 item.cantidad = cantidad
                 item.save()
-
-    # -------------------------
-    # Eliminar producto
-    # -------------------------
     def remove_producto(self, producto):
         self.items.filter(producto=producto).delete()
-
-    # -------------------------
-    # Calcular total considerando permisos
-    # -------------------------
     @property
     def total(self):
-        user = getattr(self, "user", None)
+        user = getattr(self, "usuario", None)
         if not user:
             return None
-
-        # Si el usuario puede ver precios por mayoreo y existe precio_mayoreo
         if getattr(user, "puede_ver_precios_mayoreo", False):
             total = sum(
                 item.cantidad * (item.producto.precio_mayoreo or item.producto.precio_unitario)
                 for item in self.items.all()
             )
             return total
-        # Si solo puede ver precios unitarios
         elif getattr(user, "puede_ver_precios", False):
             total = sum(item.cantidad * item.producto.precio_unitario for item in self.items.all())
             return total
-        # Si no tiene permisos de precios
         return None
 
 
 class CartItem(models.Model):
     cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name="items")
-    producto = models.ForeignKey('Producto', on_delete=models.CASCADE)
+    producto = models.ForeignKey("Producto", on_delete=models.CASCADE)
     cantidad = models.PositiveIntegerField(default=1)
 
     class Meta:
-        unique_together = ('cart', 'producto')  # Evita duplicados
+        unique_together = ("cart", "producto") 
 
     def __str__(self):
         return f"{self.cantidad} x {self.producto.nombre_producto}"
@@ -359,33 +312,12 @@ class CartItem(models.Model):
         return self.cantidad * Decimal(self.producto.precio_unitario)
 
 
-import random
-import string
-from django.db import models
-from django.conf import settings
-from django.core.exceptions import ValidationError
-from decimal import Decimal
-
-User = settings.AUTH_USER_MODEL
-
-
 def generate_unique_order_code():
     """Genera un código aleatorio único para la orden"""
     while True:
-        code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+        code = "".join(random.choices(string.ascii_uppercase + string.digits, k=8))
         if not Order.objects.filter(code=code).exists():
             return code
-
-
-from decimal import Decimal
-from django.db import models
-from django.core.exceptions import ValidationError
-from .utils import generate_unique_order_code  # asegúrate de tener tu función
-from tienda.models import Cart, Producto
-from django.contrib.auth import get_user_model
-
-User = get_user_model()
-
 
 class Order(models.Model):
     STATUS_CHOICES = [
@@ -404,14 +336,7 @@ class Order(models.Model):
         default=generate_unique_order_code
     )
 
-    # 🔹 Datos del usuario
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='orders'
-    )
-
-    # 🔹 Datos del checkout
+    user = models.ForeignKey("tienda.CustomUser", on_delete=models.CASCADE)
     dni = models.CharField(max_length=20)
     phone = models.CharField(max_length=20)
     address = models.CharField(max_length=255)
@@ -419,8 +344,6 @@ class Order(models.Model):
     state = models.CharField(max_length=100)
     country = models.CharField(max_length=100, default="Perú")
     notes = models.TextField(blank=True, null=True)
-
-    # 🔹 Carrito asociado (solo referencia)
     cart = models.ForeignKey(
         'Cart',
         on_delete=models.SET_NULL,
@@ -429,14 +352,10 @@ class Order(models.Model):
         related_name='orders'
     )
 
-    # 🔹 Totales
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
     shipping = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
     total = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
-
-    # 🔹 Estado
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -458,11 +377,9 @@ class Order(models.Model):
             producto = item.producto
             cantidad = item.cantidad
 
-            # Verifica que hay stock, pero no lo descuenta
             if producto.stock < cantidad:
                 raise ValidationError(f"Stock insuficiente para {producto.nombre_producto}.")
 
-            # Selecciona el precio correcto
             if getattr(self.user, "puede_ver_precios_mayoreo", False) and producto.precio_mayoreo:
                 price = producto.precio_mayoreo
             else:
@@ -470,7 +387,6 @@ class Order(models.Model):
 
             subtotal = cantidad * price
 
-            # Crea el item sin modificar el stock
             OrderItem.objects.create(
                 order=self,
                 producto=producto,
@@ -481,18 +397,14 @@ class Order(models.Model):
 
             subtotal_total += subtotal
 
-        # Calcula totales
         self.subtotal = subtotal_total
         self.total = subtotal_total + Decimal(self.shipping or 0)
         self.save()
 
-        # Desactiva el carrito
         cart.activo = False
         cart.save()
 
         return self
-
-
 
 class OrderItem(models.Model):
     order = models.ForeignKey(
@@ -510,7 +422,6 @@ class OrderItem(models.Model):
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, editable=False)
 
     def save(self, *args, **kwargs):
-        # Asegurar cálculo del subtotal
         self.subtotal = self.cantidad * self.price
         super().save(*args, **kwargs)
 
@@ -518,10 +429,6 @@ class OrderItem(models.Model):
         producto_nombre = self.producto.nombre_producto if self.producto else "Producto eliminado"
         return f"{self.cantidad} x {producto_nombre}"
 
-
-# -----------------------------
-# MODELO DE WISHLIST (LISTA DE DESEOS)
-# -----------------------------
 class Wishlist(models.Model):
     usuario = models.ForeignKey(
         "CustomUser",
