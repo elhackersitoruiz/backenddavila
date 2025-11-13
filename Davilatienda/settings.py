@@ -23,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-81f5eeb6vaxqm==cegm7hr$hpkv4^f8b(aw2%ar0j#*8_!8wez'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 import os
 
 MEDIA_URL = '/media/'  # URL para acceder a los archivos
