@@ -1,0 +1,19 @@
+name: backenddavila
+
+services:
+  - name: django
+    github:
+      repo: elhackersitoruiz/backenddavila
+      branch: main
+    runtime: python
+    build_command: pip install -r requirements.txt
+    run_command: gunicorn Davilatienda.wsgi:application --bind 0.0.0.0:$PORT
+
+    static_dirs:
+      - from: staticfiles
+        to: /static
+
+    envs:
+      - key: SECRET_KEY
+        scope: RUN_TIME
+        value: ${SECRET_KEY}
