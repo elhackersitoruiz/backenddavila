@@ -105,16 +105,17 @@ WSGI_APPLICATION = 'Davilatienda.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DATABASE_NAME', 'defaultdb'),
-        'USER': os.environ.get('DATABASE_USER', 'doadmin'),
+        'NAME': os.environ.get('DATABASE_NAME'),
+        'USER': os.environ.get('DATABASE_USER'),
         'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
-        'HOST': os.environ.get('DATABASE_HOST', 'db-postgresql-nyc3-07998-do-user-28587391-0.l.db.ondigitalocean.com'),
-        'PORT': os.environ.get('DATABASE_PORT', '25060'),
+        'HOST': os.environ.get('DATABASE_HOST'),
+        'PORT': os.environ.get('DATABASE_PORT'),
         'OPTIONS': {
             'sslmode': 'require',
         },
     }
 }
+
 
 # ----------------------------
 # REST Framework & JWT
