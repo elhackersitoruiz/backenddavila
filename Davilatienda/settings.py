@@ -64,6 +64,7 @@ MIDDLEWARE = [
 ]
 CORS_ALLOWED_ORIGINS = [
     "https://www.motorepuestodavila.com"
+    
 
 ]
 
