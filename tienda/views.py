@@ -851,7 +851,7 @@ class RequestPasswordResetView(APIView):
         token = token_generator.make_token(user)
 
         uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
-        reset_link = f"http://localhost:3000/reset-password?uid={uidb64}&token={token}"
+        reset_link = f"https://www.motorepuestodavila.com/reset-password?uid={uidb64}&token={token}"
 
         send_mail(
             "Recupera tu contraseña",
