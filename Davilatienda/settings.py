@@ -19,12 +19,6 @@ DEBUG = False
 ALLOWED_HOSTS = ['*']
 
 # ----------------------------
-# Media
-# ----------------------------
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-
-# ----------------------------
 # Authentication
 # ----------------------------
 AUTH_USER_MODEL = 'tienda.CustomUser'
@@ -54,7 +48,6 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
-    'tienda.middleware.MediaMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -195,3 +188,5 @@ AWS_DEFAULT_ACL = "public-read"
 AWS_QUERYSTRING_AUTH = False
 
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+
+MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
