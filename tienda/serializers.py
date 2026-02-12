@@ -95,7 +95,7 @@ class ProductoSerializer(serializers.ModelSerializer):
     proveedor_detalle = serializers.SerializerMethodField()
     proveedor_marcas = serializers.SerializerMethodField()
     proveedor_categorias = serializers.SerializerMethodField()
-    imagen = serializers.SerializerMethodField()  # Cambiado a SerializerMethodField
+    imagen = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = Producto
@@ -128,6 +128,9 @@ class ProductoSerializer(serializers.ModelSerializer):
             'proveedor_marcas',
             'proveedor_categorias',
         ]
+        extra_kwargs = {
+            'imagen': {'required': False, 'allow_null': True},
+        }
 
     def get_proveedor_detalle(self, obj):
         if obj.proveedor:
@@ -136,7 +139,6 @@ class ProductoSerializer(serializers.ModelSerializer):
                 "nombre_empresa": obj.proveedor.nombre_empresa
             }
         return None
-
     def get_proveedor_marcas(self, obj):
         if obj.proveedor:
             return obj.proveedor.get_marcas_list()
@@ -146,24 +148,15 @@ class ProductoSerializer(serializers.ModelSerializer):
         if obj.proveedor:
             return obj.proveedor.get_categorias_list()
         return []
-
-    def get_imagen(self, obj):
-        """Devuelve la URL pública completa de DigitalOcean Spaces"""
-        if obj.imagen:
-            SPACE_URL = "https://davilatienda-media.nyc3.digitaloceanspaces.com/"
-            # Si guardas solo el nombre del archivo en `imagen.name`
-            return f"{SPACE_URL}{obj.imagen.name}"
-        return None
-
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get("request")
         user = request.user if request else None
-
-        # Flag de nuevo
         data["isNew"] = instance.es_reciente()
 
-        # Manejo de precios según usuario
+        if instance.imagen:
+            data["imagen"] = instance.imagen.url  
+
         if user and user.is_authenticated:
             if user.is_staff or user.is_superuser:
                 pass
