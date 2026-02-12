@@ -155,7 +155,8 @@ class ProductoSerializer(serializers.ModelSerializer):
         data["isNew"] = instance.es_reciente()
 
         if instance.imagen and request:
-            data["imagen"] = request.build_absolute_uri(instance.imagen.url)
+            data["imagen"] = instance.imagen.url
+
         if user and user.is_authenticated:
             if user.is_staff or user.is_superuser:
                 pass

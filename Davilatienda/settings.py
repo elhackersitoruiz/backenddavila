@@ -175,7 +175,7 @@ GOOGLE_CLIENT_ID = "131411826466-uiljalsr4s8qor77fneqcfultvi22bcc.apps.googleuse
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AAWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 
 AWS_STORAGE_BUCKET_NAME = "davilatienda-media"
@@ -187,6 +187,9 @@ AWS_S3_CUSTOM_DOMAIN = "davilatienda-media.nyc3.cdn.digitaloceanspaces.com"
 AWS_DEFAULT_ACL = "public-read"
 AWS_QUERYSTRING_AUTH = False
 
+AWS_LOCATION = "media"
+
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 
-MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
+MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/{AWS_LOCATION}/"
+
