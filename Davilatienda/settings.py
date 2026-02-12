@@ -176,17 +176,18 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 # Access Keys desde variables de entorno (seguras)
-import os
 from storages.backends.s3boto3 import S3Boto3Storage
+import os
 
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_STORAGE_BUCKET_NAME = "davilatienda-media"
-AWS_S3_ENDPOINT_URL = "https://nyc3.digitaloceanspaces.com"
-AWS_S3_CUSTOM_DOMAIN = f"{AWS_STORAGE_BUCKET_NAME}.nyc3.cdn.digitaloceanspaces.com"
-AWS_LOCATION = "media"
-AWS_DEFAULT_ACL = "public-read"
-AWS_QUERYSTRING_AUTH = False
+AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
+AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME")
+AWS_S3_ENDPOINT_URL = os.getenv("AWS_S3_ENDPOINT_URL")
+AWS_DEFAULT_ACL = os.getenv("AWS_DEFAULT_ACL", "public-read")
+AWS_QUERYSTRING_AUTH = os.getenv("AWS_QUERYSTRING_AUTH", False)
+AWS_LOCATION = os.getenv("AWS_LOCATION", "media")
 
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+AWS_S3_CUSTOM_DOMAIN = f"{AWS_STORAGE_BUCKET_NAME}.{AWS_S3_REGION_NAME}.cdn.digitaloceanspaces.com"
 MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/{AWS_LOCATION}/"
