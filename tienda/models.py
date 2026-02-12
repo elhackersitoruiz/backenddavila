@@ -14,6 +14,8 @@ from django.db import models
 import random, string
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
+from storages.backends.s3boto3 import S3Boto3Storage
+
 class Categoria(models.Model):
     nombre = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(unique=True, blank=True)
@@ -95,17 +97,17 @@ class Proveedor(models.Model):
     def get_categorias_list(self):
         return [c.strip() for c in self.categorias.split(',') if c.strip()]
 
+media_storage = S3Boto3Storage(location=settings.AWS_LOCATION)
+
+
 class Producto(models.Model):
     codigo = models.CharField(
         max_length=20,
         unique=True,
         help_text="Código único del producto."
     )
-    imagen = models.ImageField(
-        upload_to="productos/",
-        blank=True,
-        null=True
-    )
+    imagen = models.ImageField(storage=media_storage, blank=True, null=True)
+
     nombre_producto = models.CharField(
         max_length=200,
         unique=False
