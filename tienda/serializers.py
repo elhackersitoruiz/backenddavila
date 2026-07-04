@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import (
-    Proveedor,
+    
     Producto,
     CustomUser,
     Cart,
@@ -50,34 +50,6 @@ class PendingUserSerializer(serializers.ModelSerializer):
         model = PendingUser
         fields = ["email", "nombre", "apellidos", "password", "password2"]
 
-class ProveedorSerializer(serializers.ModelSerializer):
-    marcas_list = serializers.SerializerMethodField()
-    categorias_list = serializers.SerializerMethodField()
-
-    class Meta:
-        model = Proveedor
-        fields = [
-            'id',
-            'nombre_empresa',
-            'nombre_contacto',
-            'telefono',
-            'correo',
-            'direccion',
-            'ruc_documento',
-            'tipo_proveedor',
-            'marcas',
-            'categorias',
-            'marcas_list',
-            'categorias_list',
-            'fecha_registro',
-        ]
-        read_only_fields = ['id', 'fecha_registro', 'marcas_list', 'categorias_list']
-
-    def get_marcas_list(self, obj):
-        return obj.get_marcas_list()
-
-    def get_categorias_list(self, obj):
-        return obj.get_categorias_list()
 
 class CategoriaSerializer(serializers.ModelSerializer):
     class Meta:
@@ -92,10 +64,9 @@ class MarcaSerializer(serializers.ModelSerializer):
 
 
 class ProductoSerializer(serializers.ModelSerializer):
-    proveedor_detalle = serializers.SerializerMethodField()
-    proveedor_marcas = serializers.SerializerMethodField()
-    proveedor_categorias = serializers.SerializerMethodField()
     imagen = serializers.ImageField(required=False, allow_null=True)
+    marca_detalle = MarcaSerializer(source='marca', read_only=True)
+    categoria_detalle = CategoriaSerializer(source='categoria', read_only=True)
 
     class Meta:
         model = Producto
@@ -105,10 +76,10 @@ class ProductoSerializer(serializers.ModelSerializer):
             'imagen',
             'nombre_producto',
             'descripcion',
-            'proveedor',
-            'proveedor_detalle',
-            'marca',
-            'categoria',
+            'marca',            # para escribir: se envía el ID de la marca
+            'marca_detalle',    # para leer: objeto completo {id, nombre, slug}
+            'categoria',        # para escribir: se envía el ID de la categoría
+            'categoria_detalle',
             'procedencia',
             'stock',
             'fecha_registro',
@@ -118,36 +89,12 @@ class ProductoSerializer(serializers.ModelSerializer):
             'slug',
             'precio_unitario',
             'precio_mayoreo',
-            'proveedor_marcas',
-            'proveedor_categorias',
         ]
-        read_only_fields = [
-            'id',
-            'slug',
-            'proveedor_detalle',
-            'proveedor_marcas',
-            'proveedor_categorias',
-        ]
+        read_only_fields = ['id', 'slug', 'marca_detalle', 'categoria_detalle']
         extra_kwargs = {
             'imagen': {'required': False, 'allow_null': True},
         }
 
-    def get_proveedor_detalle(self, obj):
-        if obj.proveedor:
-            return {
-                "id": obj.proveedor.id,
-                "nombre_empresa": obj.proveedor.nombre_empresa
-            }
-        return None
-    def get_proveedor_marcas(self, obj):
-        if obj.proveedor:
-            return obj.proveedor.get_marcas_list()
-        return []
-
-    def get_proveedor_categorias(self, obj):
-        if obj.proveedor:
-            return obj.proveedor.get_categorias_list()
-        return []
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get("request")
@@ -155,7 +102,7 @@ class ProductoSerializer(serializers.ModelSerializer):
         data["isNew"] = instance.es_reciente()
 
         if instance.imagen:
-            data["imagen"] = instance.imagen.url  
+            data["imagen"] = instance.imagen.url
 
         if user and user.is_authenticated:
             if user.is_staff or user.is_superuser:

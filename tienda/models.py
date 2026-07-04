@@ -48,54 +48,6 @@ class Marca(models.Model):
         return self.nombre
 
 
-class Proveedor(models.Model):
-    TIPO_PROVEEDOR_CHOICES = [
-        ('nacional', 'Nacional'),
-        ('internacional', 'Internacional'),
-    ]
-
-    nombre_empresa = models.CharField(max_length=200, unique=True)
-    nombre_contacto = models.CharField(max_length=150)
-    telefono = models.CharField(
-        max_length=20,
-        validators=[RegexValidator(r'^\+?\d{7,15}$', 'Ingrese un número de teléfono válido.')]
-    )
-    correo = models.EmailField(unique=True, validators=[EmailValidator(message="Ingrese un correo válido.")])
-    direccion = models.TextField()
-    ruc_documento = models.CharField(
-        "RUC / Documento Legal",
-        max_length=50,
-        unique=True,
-        validators=[RegexValidator(r'^[0-9A-Za-z\-]+$', 'Ingrese un documento válido (solo letras, números y guiones).')]
-    )
-    tipo_proveedor = models.CharField(
-        max_length=20,
-        choices=TIPO_PROVEEDOR_CHOICES,
-        default='nacional'
-    )
-    marcas = models.TextField(
-        blank=True,
-        help_text="Ingrese las marcas separadas por comas. Ej: Marca1, Marca2, Marca3"
-    )
-    categorias = models.TextField(
-        blank=True,
-        help_text="Ingrese las categorías separadas por comas. Ej: Categoria1, Categoria2"
-    )
-    fecha_registro = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        verbose_name = "Proveedor"
-        verbose_name_plural = "Proveedores"
-        ordering = ['nombre_empresa']
-
-    def __str__(self):
-        return f"{self.nombre_empresa} ({self.get_tipo_proveedor_display()})"
-
-    def get_marcas_list(self):
-        return [m.strip() for m in self.marcas.split(',') if m.strip()]
-
-    def get_categorias_list(self):
-        return [c.strip() for c in self.categorias.split(',') if c.strip()]
 
 media_storage = S3Boto3Storage(location=settings.AWS_LOCATION)
 
@@ -116,13 +68,8 @@ class Producto(models.Model):
         blank=True,
         null=True
     )
-    proveedor = models.ForeignKey(
-        Proveedor,
-        on_delete=models.PROTECT,
-        related_name='productos'
-    )
-    marca = models.CharField(max_length=100)
-    categoria = models.CharField(max_length=100)
+    marca = models.ForeignKey('Marca', on_delete=models.PROTECT, related_name='productos')
+    categoria = models.ForeignKey('Categoria', on_delete=models.PROTECT, related_name='productos')
     procedencia = models.CharField(max_length=150, blank=True, null=True)
     precio_unitario = models.DecimalField(
         max_digits=10,
@@ -175,7 +122,7 @@ class Producto(models.Model):
         return timezone.now() - self.fecha_registro <= limite
 
     def __str__(self):
-        return f"{self.nombre_producto} - {self.proveedor.nombre_empresa}"
+        return f"{self.nombre_producto} - {self.marca.nombre}"
 
 
 @receiver(post_delete, sender=Producto)

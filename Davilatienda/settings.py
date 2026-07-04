@@ -5,6 +5,14 @@ Django settings for Davilatienda project.
 from pathlib import Path
 import os
 from datetime import timedelta
+from pathlib import Path
+import os
+from datetime import timedelta
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ----------------------------
 # Paths
@@ -96,16 +104,18 @@ WSGI_APPLICATION = 'Davilatienda.wsgi.application'
 # ----------------------------
 # Database (PostgreSQL)
 # ----------------------------
+DB_HOST = os.environ.get('DATABASE_HOST', 'localhost')
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.environ.get('DATABASE_NAME'),
         'USER': os.environ.get('DATABASE_USER'),
         'PASSWORD': os.environ.get('DATABASE_PASSWORD'),
-        'HOST': os.environ.get('DATABASE_HOST'),
+        'HOST': DB_HOST,
         'PORT': os.environ.get('DATABASE_PORT'),
         'OPTIONS': {
-            'sslmode': 'require',
+            'sslmode': 'require' if DB_HOST not in ('localhost', '127.0.0.1') else 'disable',
         },
     }
 }

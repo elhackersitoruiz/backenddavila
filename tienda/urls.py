@@ -5,10 +5,10 @@ from rest_framework_simplejwt.views import (
     TokenVerifyView
 )
 from .views import (
-    AdminBlockUserView, AdminProveedorStatsView, AsignarPrecioMayoreoView,CartDetailView,CartAddProductView,CartUpdateProductView,CartRemoveProductView, MisPedidosView,
+    AdminBlockUserView, AsignarPrecioMayoreoView,CartDetailView,CartAddProductView,CartUpdateProductView,CartRemoveProductView, MisPedidosView,
     ProductoCreateView, ProductoDeleteView, ProductoDetailView, ProductoListView, ProductoUpdateView, ProductosRelacionadosView,
-    ProveedorListAPIView, ProveedorCreateAPIView,CartClearView,
-    ProveedorUpdateAPIView, ProveedorDeleteAPIView,
+    CartClearView,
+
     RegisterView, RegisterView, LoginView, RequestPasswordResetView, UpdatePricePermissionView, UserInfoView, UserListView, UserProfileView, VerifyCodeView, ResendCodeView,
       CategoriaListAPIView, CategoriaCreateAPIView, CategoriaUpdateAPIView, CategoriaDeleteAPIView,
     MarcaListAPIView, MarcaCreateAPIView, MarcaUpdateAPIView, MarcaDeleteAPIView, WishlistListView, WishlistCreateView, WishlistDeleteView,    OrderListView,
@@ -31,10 +31,6 @@ urlpatterns = [
     path('cart/remove/<int:producto_id>/', CartRemoveProductView.as_view(), name='cart-remove'),
     path('cart/clear/', CartClearView.as_view(), name='cart-clear'),
 
-    path("proveedores/", ProveedorListAPIView.as_view(), name="proveedor-list"),
-    path("proveedores/create/", ProveedorCreateAPIView.as_view(), name="proveedor-create"),
-    path("proveedores/<int:pk>/update/", ProveedorUpdateAPIView.as_view(), name="proveedor-update"),
-    path("proveedores/<int:pk>/delete/", ProveedorDeleteAPIView.as_view(), name="proveedor-delete"),
 
     path('productos/', ProductoListView.as_view(), name='producto-list-create'),
     path('productos/create/', ProductoCreateView.as_view(), name='producto-list-create'),
@@ -87,15 +83,14 @@ urlpatterns = [
     path("password-reset/confirm/", PasswordResetConfirmView.as_view(), name="password-reset-confirm"),
     path("password-reset/", RequestPasswordResetView.as_view(), name="password-reset"),
     
-    path('admin/proveedor-stats/', AdminProveedorStatsView.as_view(), name='admin-proveedor-stats'),
     path("admin/block-user/<int:user_id>/", AdminBlockUserView.as_view(), name="admin-block-user"),
-path(
-        "productos/relacionados/<str:categoria>/",
+    path(
+        "productos/relacionados/<int:categoria>/",
         ProductosRelacionadosView.as_view(),
         name="productos-relacionados",
     ),
     path(
-        "productos/relacionados/<str:categoria>/<int:producto_id>/",
+        "productos/relacionados/<int:categoria>/<int:producto_id>/",
         ProductosRelacionadosView.as_view(),
         name="productos-relacionados-id",
     ),

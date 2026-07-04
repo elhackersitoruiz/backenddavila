@@ -12,7 +12,6 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.authentication import JWTAuthentication
 import random
 from .models import (
-    Proveedor,
     Producto,
     CustomUser,
     Cart,
@@ -26,7 +25,6 @@ from .models import (
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.encoding import force_bytes
 from .serializers import (
-    ProveedorSerializer,
     ProductoSerializer,
     UserRegisterSerializer,
     CartSerializer,
@@ -240,40 +238,16 @@ class ResendCodeView(APIView):
             {"message": "Nuevo código enviado correctamente."},
             status=status.HTTP_200_OK,
         )
-class ProveedorListAPIView(generics.ListAPIView):
-    queryset = Proveedor.objects.all()
-    serializer_class = ProveedorSerializer
-    permission_classes = [IsAdminUser]
 
-class ProveedorCreateAPIView(generics.CreateAPIView):
-    queryset = Proveedor.objects.all()
-    serializer_class = ProveedorSerializer
-    permission_classes = [IsAdminUser] 
-
-class ProveedorRetrieveAPIView(generics.RetrieveAPIView):
-    queryset = Proveedor.objects.all()
-    serializer_class = ProveedorSerializer
-    permission_classes = [IsAdminUser] 
-
-class ProveedorUpdateAPIView(generics.UpdateAPIView):
-    queryset = Proveedor.objects.all()
-    serializer_class = ProveedorSerializer
-    permission_classes = [IsAdminUser]  
-
-class ProveedorDeleteAPIView(generics.DestroyAPIView):
-    queryset = Proveedor.objects.all()
-    serializer_class = ProveedorSerializer
-    permission_classes = [IsAdminUser] 
 
 class ProductoListView(generics.ListAPIView):
     serializer_class = ProductoSerializer
     permission_classes = [AllowAny]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['nombre_producto', 'descripcion', 'categoria', 'marca']
+    search_fields = ['nombre_producto', 'descripcion', 'categoria__nombre', 'marca__nombre']
     ordering_fields = ['precio_unitario', 'fecha_registro']
 
     def get_queryset(self):
-        hace_7_dias = timezone.now() - timedelta(days=30)
         queryset = Producto.objects.all().order_by('-fecha_registro')
 
         categoria = self.request.query_params.get('categoria')
@@ -281,9 +255,9 @@ class ProductoListView(generics.ListAPIView):
         procedencia = self.request.query_params.get('procedencia')
 
         if categoria:
-            queryset = queryset.filter(categoria__icontains=categoria)
+            queryset = queryset.filter(categoria_id=categoria)
         if marca:
-            queryset = queryset.filter(marca__icontains=marca)
+            queryset = queryset.filter(marca_id=marca)
         if procedencia:
             queryset = queryset.filter(procedencia__icontains=procedencia)
 
@@ -372,20 +346,10 @@ class ProductosRelacionadosView(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
     def get(self, request, categoria, producto_id=None):
-        """
-        Devuelve productos relacionados por categoría,
-        excluyendo el producto actual (si se pasa producto_id)
-        y limitando a 8 resultados.
-        """
-        queryset = Producto.objects.filter(categoria=categoria)
-
-        # Excluir el producto actual si se pasa su ID
+        queryset = Producto.objects.filter(categoria_id=categoria)
         if producto_id:
             queryset = queryset.exclude(id=producto_id)
-
-        # Limitamos los resultados
         queryset = queryset.order_by('-fecha_registro')[:8]
-
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
@@ -863,73 +827,6 @@ class RequestPasswordResetView(APIView):
 
         return Response({"message": "Correo de recuperación enviado."}, status=status.HTTP_200_OK)
     
-class AdminProveedorStatsView(APIView):
-    permission_classes = [IsAdminUser]
-    def get(self, request):
-        now = timezone.now()
-        primer_dia_mes = timezone.datetime(now.year, now.month, 1, tzinfo=timezone.get_current_timezone())
-
-        items_mes = OrderItem.objects.filter(
-            order__status='completed',
-            order__created_at__gte=primer_dia_mes
-        )
-
-        proveedores_data = (
-            items_mes
-            .values('producto__proveedor__nombre_empresa')
-            .annotate(
-                ventas=Sum('cantidad'),
-                ganancias=Sum('subtotal')
-            )
-            .order_by('-ventas') 
-        )
-
-        sales_data = [
-            {
-                "proveedor": p['producto__proveedor__nombre_empresa'],
-                "ventas": p['ventas'],
-                "ganancias": float(p['ganancias'])
-            } for p in proveedores_data
-        ]
-        categorias_data = (
-            items_mes
-            .values('producto__categoria')
-            .annotate(
-                ventas=Sum('cantidad'),
-                ganancias=Sum('subtotal')
-            )
-            .order_by('-ventas')
-        )
-        categorias_data = [
-            {
-                "categoria": c['producto__categoria'],
-                "ventas": c['ventas'],
-                "ganancias": float(c['ganancias'])
-            } for c in categorias_data
-        ]
-        productos_data = (
-            items_mes
-            .values('producto__nombre_producto')
-            .annotate(ventas=Sum('cantidad'))
-            .order_by('-ventas')
-        )
-        productos_data = [
-            {"producto": p['producto__nombre_producto'], "ventas": p['ventas']}
-            for p in productos_data
-        ]
-
-        totales_mes = {
-            "ventas": items_mes.aggregate(total_ventas=Sum('cantidad'))['total_ventas'] or 0,
-            "ganancias": float(items_mes.aggregate(total_ganancias=Sum('subtotal'))['total_ganancias'] or 0.0)
-        }
-        data = {
-            "salesData": sales_data,
-            "categoriasData": categorias_data,
-            "productosData": productos_data,
-            "totalesMes": totales_mes
-        }
-
-        return Response(data)
     
 class AdminBlockUserView(APIView):
     permission_classes = [permissions.IsAdminUser]  
