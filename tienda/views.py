@@ -46,7 +46,10 @@ from django.db.models import Sum, F
 token_generator = PasswordResetTokenGenerator()
 from urllib.parse import urlencode
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+import logging
+from django.conf import settings
 
+logger = logging.getLogger(__name__)
 class RegisterView(APIView):
     permission_classes = [AllowAny]
 
@@ -73,6 +76,15 @@ class RegisterView(APIView):
             )
 
             codigo = enviar_codigo_verificacion(email)
+
+            if codigo is None:
+                if created:
+                    pending.delete()
+                return Response(
+                    {"error": "No se pudo enviar el correo de verificación. Intenta nuevamente más tarde."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
             pending.verification_code = codigo
             pending.code_expires_at = timezone.now() + timedelta(minutes=10)
             pending.resend_count = 0
@@ -82,8 +94,6 @@ class RegisterView(APIView):
             return Response({
                 "message": "Se ha enviado un código de verificación a tu correo.",
             }, status=status.HTTP_201_CREATED)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class VerifyCodeView(APIView):
     permission_classes = [AllowAny]
@@ -182,14 +192,18 @@ def enviar_codigo_verificacion(email):
     </div>
     """
 
-    send_mail(
-        subject="Código de verificación - Davila Tienda",
-        message=f"Tu código de verificación es: {codigo}",
-        from_email="no-reply@davilatienda.com",
-        recipient_list=[email],
-        html_message=html_message,
-        fail_silently=False,
-    )
+    try:
+        send_mail(
+            subject="Código de verificación - Davila Tienda",
+            message=f"Tu código de verificación es: {codigo}",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[email],
+            html_message=html_message,
+            fail_silently=False,
+        )
+    except Exception as e:
+            logger.error(f"Error enviando correo de verificación a {email}: {e}")
+            return None
 
     return codigo
 
