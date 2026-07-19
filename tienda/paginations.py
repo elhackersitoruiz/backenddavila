@@ -1,4 +1,4 @@
-from rest.framework.pagination import PageNumberPagination
+from rest_framework.pagination import PageNumberPagination
 
 class ProductPagination(PageNumberPagination):
     page_size = 40  
