@@ -46,7 +46,7 @@ urlpatterns = [
     path('categorias/<int:pk>/update/', CategoriaUpdateAPIView.as_view(), name='categoria-update'),
     path('categorias/<int:pk>/delete/', CategoriaDeleteAPIView.as_view(), name='categoria-delete'),
 
-    path('marcas/publicas/', CategoriaPublicListView.as_view(), name='categoria-public-list'),
+    path('marcas/publicas/', MarcaPublicListView.as_view(), name='categoria-public-list'),
     path('marcas/', MarcaListAPIView.as_view(), name='marca-list'),
     path('marcas/create/', MarcaCreateAPIView.as_view(), name='marca-create'),
     path('marcas/<int:pk>/update/', MarcaUpdateAPIView.as_view(), name='marca-update'),
