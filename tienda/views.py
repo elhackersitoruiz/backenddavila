@@ -22,6 +22,8 @@ from .models import (
     Wishlist,
     OrderItem
 )
+from django.db.models import F
+from django.db.models.functions import Coalesce
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.encoding import force_bytes
 from .serializers import (
@@ -48,7 +50,7 @@ from urllib.parse import urlencode
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 import logging
 from django.conf import settings
-
+from .paginations import ProductPagination
 logger = logging.getLogger(__name__)
 class RegisterView(APIView):
     permission_classes = [AllowAny]
@@ -254,26 +256,59 @@ class ResendCodeView(APIView):
         )
 
 
+
+
 class ProductoListView(generics.ListAPIView):
     serializer_class = ProductoSerializer
     permission_classes = [AllowAny]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    pagination_class = ProductPagination
+    filter_backends = [filters.SearchFilter]
     search_fields = ['nombre_producto', 'descripcion', 'categoria__nombre', 'marca__nombre']
-    ordering_fields = ['precio_unitario', 'fecha_registro']
 
     def get_queryset(self):
-        queryset = Producto.objects.all().order_by('-fecha_registro')
+        user = self.request.user
+        ve_mayoreo = user.is_authenticated and getattr(user, 'puede_ver_precios_mayoreo', False)
+
+        queryset = Producto.objects.select_related('categoria', 'marca').all()
+
+        if ve_mayoreo:
+            queryset = queryset.annotate(
+                precio_efectivo=Coalesce('precio_mayoreo', 'precio_unitario')
+            )
+        else:
+            queryset = queryset.annotate(
+                precio_efectivo=F('precio_unitario')
+            )
 
         categoria = self.request.query_params.get('categoria')
         marca = self.request.query_params.get('marca')
         procedencia = self.request.query_params.get('procedencia')
+        min_price = self.request.query_params.get('min')
+        max_price = self.request.query_params.get('max')
+        sort = self.request.query_params.get('sort')
 
         if categoria:
-            queryset = queryset.filter(categoria_id=categoria)
+            queryset = queryset.filter(categoria_id=categoria) if categoria.isdigit() \
+                else queryset.filter(categoria__slug=categoria)
+
         if marca:
-            queryset = queryset.filter(marca_id=marca)
+            queryset = queryset.filter(marca_id=marca) if marca.isdigit() \
+                else queryset.filter(marca__slug=marca)
+
         if procedencia:
             queryset = queryset.filter(procedencia__icontains=procedencia)
+
+        if min_price:
+            queryset = queryset.filter(precio_efectivo__gte=min_price)
+        if max_price:
+            queryset = queryset.filter(precio_efectivo__lte=max_price)
+
+        if sort == 'price-asc':
+            queryset = queryset.order_by('precio_efectivo')
+        elif sort == 'price-desc':
+            queryset = queryset.order_by('-precio_efectivo')
+        else:
+            queryset = queryset.order_by('-fecha_registro')
 
         return queryset
 
@@ -872,3 +907,14 @@ class AdminBlockUserView(APIView):
             {"message": f"El usuario {user.email} fue {action} correctamente."},
             status=status.HTTP_200_OK
         )
+class CategoriaPublicListView(generics.ListAPIView):
+    """Lista de categorías, sin necesidad de ser admin. Para el sidebar de filtros de la tienda."""
+    queryset = Categoria.objects.all().order_by('nombre')
+    serializer_class = CategoriaSerializer
+    permission_classes = [AllowAny]
+
+class MarcaPublicListView(generics.ListAPIView):
+    """Lista de marcas, sin necesidad de ser admin. Para el sidebar de filtros de la tienda."""
+    queryset = Marca.objects.all().order_by('nombre')
+    serializer_class = MarcaSerializer
+    permission_classes = [AllowAny]

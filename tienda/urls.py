@@ -21,6 +21,8 @@ from .views import (
     AdminOrderDeleteView,    
     PasswordResetValidateTokenView,
     PasswordResetConfirmView,
+    CategoriaPublicListView,
+    MarcaPublicListView
 )
 
 urlpatterns = [
@@ -38,11 +40,13 @@ urlpatterns = [
     path('productos/<int:pk>/update/', ProductoUpdateView.as_view(), name='producto-update'),
     path('productos/<int:pk>/delete/', ProductoDeleteView.as_view(), name='producto-delete'),
 
+    path('categorias/publicas/', CategoriaPublicListView.as_view(), name='categoria-public-list'),
     path('categorias/', CategoriaListAPIView.as_view(), name='categoria-list'),
     path('categorias/create/', CategoriaCreateAPIView.as_view(), name='categoria-create'),
     path('categorias/<int:pk>/update/', CategoriaUpdateAPIView.as_view(), name='categoria-update'),
     path('categorias/<int:pk>/delete/', CategoriaDeleteAPIView.as_view(), name='categoria-delete'),
 
+    path('marcas/publicas/', CategoriaPublicListView.as_view(), name='categoria-public-list'),
     path('marcas/', MarcaListAPIView.as_view(), name='marca-list'),
     path('marcas/create/', MarcaCreateAPIView.as_view(), name='marca-create'),
     path('marcas/<int:pk>/update/', MarcaUpdateAPIView.as_view(), name='marca-update'),
